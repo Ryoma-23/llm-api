@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from openai import OpenAI
 from dotenv import load_dotenv
+from enum import Enum
 import os
 
 load_dotenv()
@@ -10,64 +11,63 @@ app = FastAPI()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 SYSTEM_PTOMPT = """
-あなたは「技術解説専用AIアシスタント」です。
+あなたは技術解説専用のAIアシスタントです。
 
-【役割】
-- Python、FastAPI、Web API、LLM、OpenAI APIに関する技術的な質問に対して
-  初学者にも理解できるように、論理的かつ簡潔に説明してください。
+【基本方針】
+- 回答は必ず日本語で行ってください
+- 技術・IT・プログラミングに関する内容のみを扱います
+- 雑談、感情的な慰め、日常会話には応答しません
+- 結論 → 理由 → 補足 の順で簡潔に説明してください
 
-【目的】
-- ユーザーが「なぜそうなるのか」を理解できる回答を提供すること。
-- 曖昧な説明や感覚的な表現は避け、必要に応じて例を用いて説明すること。
-
-【対応範囲】
-- 自己紹介
-- プログラミング
-- Web API
-- FastAPI / Python
-- LLM / OpenAI API
-- ソフトウェア開発に関する一般的な技術知識
-
-【禁止事項】
-- 雑談、日常会話、感情への共感
-- 技術と無関係な話題への回答
-- 推測や根拠のない断定
-- 医療・法律・投資など専門責任が必要な助言
-
-【出力ルール】
-- 結論 → 理由 → 必要に応じて補足、の順で回答する
-- 丁寧だが簡潔な文体を使う
-- 不要に長い説明はしない
-
-【対象外入力への対応】
-- 技術に関係しない入力が来た場合は、以下の形式でのみ返答すること：
-
-「このAPIは技術に関する質問専用です。PythonやFastAPIについて質問してください。」
+【入力仕様】
+- User入力には task と content が与えられます
+- task に従って content を処理してください
 """
 
 #リクエストボディの型定義
 class ChatRequest(BaseModel):
-    task: str
-    content: str
+    message: str
+    # task: str
+    # content: str
+
+class TaskType(str, Enum):
+    EXPLAIN = "Explain"
+    REWRITE = "Rewrite"
+    SUMMARIZE = "Summrize"
+    JDGE = "Judge"
+
+def detect_task(user_input: str) -> TaskType:
+    text = user_input.lower()
+
+    if any(word in text for word in ["とは", "意味", "何", "教えて"]):
+        return TaskType.EXPLAIN
+
+    if any(word in text for word in ["直して", "修正", "書き直"]):
+        return TaskType.REWRITE
+
+    if any(word in text for word in ["要約", "まとめて"]):
+        return TaskType.SUMMARIZE
+
+    if any(word in text for word in ["どっち", "正しい", "比較"]):
+        return TaskType.JUDGE
+
+    return TaskType.EXPLAIN  # デフォルト
+
 
 @app.post("/chat")
 def chat(request: ChatRequest):
+    task = detect_task(request.message)
+
+    user_prompt = F"""
+Task: {task}
+Question: {request.message}
+"""
+    
     response = client.responses.create(
         model="gpt-4o-mini",
-        input=[ #旧messages
-            {
-                "role": "system",
-                "content": SYSTEM_PTOMPT
-            },
-            {
-                "role": "user",
-                "content": f"""
-Task: {request.task}
-Content: {request.content}
-"""
-            }
+        input=[
+            {"role": "system", "content": SYSTEM_PTOMPT},
+            {"role": "user", "content": user_prompt}
         ]
     )
-    return {
-        "reply": response.output_text
-        }
+    return {"reply": response.output_text}
