@@ -1,10 +1,4 @@
-from enum import Enum
-
-class TaskType(str, Enum):
-    EXPLAIN = "Explain"
-    REWRITE = "Rewrite"
-    SUMMARIZE = "Summrize"
-    JDGE = "Judge"
+from models.schemas import TaskType
 
 
 def detect_task(user_input: str) -> TaskType:

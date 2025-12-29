@@ -1,32 +1,24 @@
 from fastapi import FastAPI
-from models.request import ChatRequest
+from models.schemas import (ChatRequest,TaskType)
+from assistants.tech_assistant import TechAssistant
+from services.llm_client import call_llm
 from services.task_detector import detect_task
-from prompt.user_templates import build_user_prompt
-from prompt.system import SYSTEM_PTOMPT
-from llm.client import client
-from services.assistant import (
-    add_user_message,
-    add_assistant_message,
-    build_messages
-)
 
 app = FastAPI()
+assistant = TechAssistant()
 
 @app.post("/chat")
 def chat(request: ChatRequest):
     task = detect_task(request.message)
-    user_prompt = build_user_prompt(task, request.message)
 
-    messages = build_messages(SYSTEM_PTOMPT, user_prompt)
+    user_prompt = assistant.build_user_prompt(task, request.message)
 
-    response = client.responses.create(
-        model="gpt-4o-mini",
-        input=messages
-    )
+    assistant.add_user_message(user_prompt)
 
-    reply = response.output_text
+    messages = assistant.build_messages()
 
-    add_user_message(user_prompt)
-    add_assistant_message(reply)
+    reply = call_llm(messages)
+
+    assistant.add_assistant_message(reply)
 
     return {"reply": reply}
